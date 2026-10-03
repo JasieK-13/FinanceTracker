@@ -299,6 +299,83 @@
   @media (max-width: 900px) { .safety-grid { grid-template-columns:repeat(2,1fr); } .forecast-why { grid-template-columns:repeat(2,1fr); } .plan-grid { grid-template-columns:1fr; } }
   @media (max-width: 640px) { .safety-grid { grid-template-columns:1fr 1fr; } .forecast-why { grid-template-columns:1fr 1fr; } }
 
+  /* V5.4 mobile comfort pass — phone-first without changing desktop layout */
+  @media (max-width: 640px) {
+    body { padding-bottom: calc(28px + env(safe-area-inset-bottom, 0px)); }
+    header.masthead { padding: 12px 14px 10px; gap: 8px; }
+    .masthead-title { font-size: 15px; }
+    .masthead-today { font-size: 11px; }
+    nav.tabs { gap: 5px; padding: 8px 10px; position: sticky; top: 0; z-index: 30; }
+    nav.tabs button { min-height: 40px; padding: 8px 13px; font-size: 13px; }
+    main { width: 100%; padding: 10px 10px 24px; }
+    .section-title { font-size: 16px; margin: 16px 0 9px; }
+    .section-title.first { margin-top: 2px; }
+    .hero-card { padding: 14px; }
+    .hero-card .hc-value { font-size: 25px; }
+    .hero-card .hc-label { font-size: 11px; }
+    .card { padding: 13px; }
+    .card-compact { padding: 11px 12px; }
+    .calendar-card { padding: 8px; }
+    .month-nav { gap: 6px; margin-bottom: 7px; }
+    .month-nav .label { min-width: 112px; font-size: 13px; }
+    .month-nav button { width: 36px; height: 36px; font-size: 16px; }
+    .month-nav .btn.small[data-action="cal-today"] { min-width: 62px; height: 36px; padding: 7px 10px; }
+    .cal-weekdays, .cal-grid { gap: 3px; }
+    .cal-weekdays span { font-size: 10px; }
+    .cal-cell { min-height: 60px; padding: 5px 2px; border-width: 2px; }
+    .cal-daynum { font-size: 12px; }
+    .cal-amt { font-size: 9px; }
+    .cal-dots { gap: 2px; margin-top: 3px; }
+    .cal-dot { width: 5px; height: 5px; }
+    .cal-legend { gap: 8px; font-size: 10px; }
+    .calendar-focus-side { gap: 9px; }
+    .side-card { padding: 12px; }
+    .side-card .list-item { padding: 9px 0; }
+    .side-card .li-title { font-size: 13px; }
+    .side-card .li-sub { font-size: 11px; }
+    .side-card .li-amt { font-size: 13px; }
+    .mini-summary { gap: 7px; }
+    .mini-summary .card { padding: 11px; }
+    .mini-summary .card-value { font-size: 17px; }
+    .stats-grid { gap: 7px; }
+    .stats-grid .card { padding: 10px; }
+    .stats-grid .card-value { font-size: 17px; }
+    .safety-grid { grid-template-columns: 1fr 1fr !important; gap: 7px; }
+    .safety-stat { padding: 11px 10px; }
+    .safety-stat .value { font-size: 18px; }
+    .forecast-why { grid-template-columns: 1fr 1fr; gap: 6px; }
+    .forecast-chart { margin-top: 10px; padding-top: 9px; }
+    .forecast-chart-title { font-size: 13px; }
+    .forecast-chart-shell { margin-left: -2px; width: calc(100% + 4px); }
+    .forecast-pinned-grid { grid-template-columns: 1fr 1fr; }
+    .forecast-pinned { padding: 10px; }
+    .field-row, .field-row.three { grid-template-columns: 1fr; }
+    .field input, .field select, .field textarea { min-height: 42px; font-size: 15px; padding: 9px 10px; }
+    .field textarea { min-height: 90px; }
+    .row-actions { gap: 7px; }
+    .btn { min-height: 40px; padding: 9px 13px; }
+    .btn.small { min-height: 36px; padding: 7px 11px; }
+    .btn.primary { min-height: 42px; padding: 10px 16px; }
+    .seg button { min-height: 38px; padding: 8px 6px; }
+    .filter-select, .more-subnav button { min-height: 40px; }
+    .toolbar { align-items: stretch; }
+    .toolbar > * { max-width: 100%; }
+    .plan-table { min-width: 620px; }
+    .card:has(.plan-table) { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .more-subnav { overflow-x: auto; flex-wrap: nowrap; padding-bottom: 2px; margin-right: -2px; scrollbar-width: none; }
+    .more-subnav::-webkit-scrollbar { display: none; }
+    .more-subnav button { flex: 0 0 auto; padding: 8px 13px; }
+    .add-details > summary { min-height: 40px; padding: 10px 14px; }
+    #fab-add { right: 14px; bottom: calc(14px + env(safe-area-inset-bottom, 0px)); width: 56px; height: 56px; }
+    #quick-add-sheet { left: 10px; right: 10px; bottom: calc(80px + env(safe-area-inset-bottom, 0px)); width: auto; padding: 14px; }
+    .qa-choices { gap: 7px; }
+    .qa-choices button { min-height: 64px; font-size: 12px; }
+    #cal-day-panel { max-height: 82vh; padding: 16px 14px calc(18px + env(safe-area-inset-bottom, 0px)); }
+    .panel-head button { min-width: 40px; min-height: 40px; font-size: 22px; }
+    .cloud-migration, .auth-shell { padding: 20px 8px; }
+    .auth-card, .cloud-migration-card { padding: 18px; }
+  }
+
   /* Cloud authentication */
   .auth-shell { min-height: 52vh; display:flex; align-items:center; justify-content:center; padding:30px 12px; }
   .auth-card { width:min(430px,100%); background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:22px; box-shadow:0 8px 28px rgba(58,46,34,.08); }
