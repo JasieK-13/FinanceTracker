@@ -299,6 +299,13 @@
   @media (max-width: 900px) { .safety-grid { grid-template-columns:repeat(2,1fr); } .forecast-why { grid-template-columns:repeat(2,1fr); } .plan-grid { grid-template-columns:1fr; } }
   @media (max-width: 640px) { .safety-grid { grid-template-columns:1fr 1fr; } .forecast-why { grid-template-columns:1fr 1fr; } }
 
+  .masthead-greeting { font-size: 12px; font-weight: 800; color: var(--accent); margin-top: 3px; }
+  .cal-cell.overdue { background: var(--bad-soft); border-color: var(--bad); position: relative; }
+  .cal-overdue-mark { display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; border-radius:50%; background:var(--bad); color:#fff; font-size:10px; font-weight:900; line-height:1; margin-left:2px; }
+  .forecast-tooltip .tt-row b.forecast-ok, .forecast-pinned b.forecast-ok { color: var(--text); }
+  .forecast-tooltip .tt-row b.forecast-warn, .forecast-pinned b.forecast-warn { color: var(--warn); }
+  .forecast-tooltip .tt-row b.forecast-bad, .forecast-pinned b.forecast-bad { color: var(--bad); }
+
   /* V5.4 mobile comfort pass — phone-first without changing desktop layout */
   @media (max-width: 640px) {
     body { padding-bottom: calc(28px + env(safe-area-inset-bottom, 0px)); }
@@ -397,7 +404,7 @@
 <body>
 
 <header class="masthead">
-  <div><div class="masthead-title" id="app-title">Household Ledger</div><div class="note" id="app-subtitle" style="margin-top:2px;">Year 2 — 2026/27</div></div>
+  <div><div class="masthead-title" id="app-title">Household Ledger</div><div class="note" id="app-subtitle" style="margin-top:2px;">Year 2 — 2026/27</div><div class="masthead-greeting" id="app-greeting" hidden></div></div>
   <div style="display:flex;align-items:center;gap:18px;"><div class="masthead-today" id="masthead-today"></div><div style="text-align:right;"><div class="note" style="margin:0;">Cash Now</div><div class="num" id="masthead-balance" style="font-weight:800;font-size:17px;">£0.00</div></div></div>
 </header>
 
@@ -780,6 +787,15 @@
   function renderCloudAccountControls() {
     const title = document.getElementById("app-title");
     if (!title || !cloudUser) return;
+    const greeting = document.getElementById("app-greeting");
+    if (greeting) {
+      const meta = cloudUser.user_metadata || {};
+      let name = meta.full_name || meta.name || meta.first_name || "";
+      if (!name && cloudUser.email) name = cloudUser.email.split("@")[0].replace(/[._-]+/g, " ");
+      name = String(name || "User").trim().split(/\s+/).map(x => x ? x.charAt(0).toUpperCase() + x.slice(1) : "").join(" ");
+      greeting.textContent = "Hello, " + name;
+      greeting.hidden = false;
+    }
     let wrap=document.getElementById("cloud-account");
     if(!wrap){
       wrap=document.createElement("div"); wrap.id="cloud-account"; wrap.style.cssText="display:flex;align-items:center;gap:6px;";
@@ -801,6 +817,8 @@
   async function applyCloudSession(session) {
     cloudAuthSerial = cloudAuthSerial.then(async () => {
       if (!session) {
+        const greeting = document.getElementById("app-greeting");
+        if (greeting) { greeting.textContent = ""; greeting.hidden = true; }
         clearCloudSubscriptions();
         cloudUser=null;
         cloudHouseholdId=null;
@@ -1880,6 +1898,7 @@
       const evs = events[d] || [];
       const isToday = mk === realMk && d === todayDate;
       const isSelected = uiState.selectedCalDay === d;
+      const hasOverdue = evs.some(e => e.kind === "expense-due" && e.overdue && !e.paid);
       const netIn = evs.filter(e => (e.kind === "scheduled" || e.kind === "income-due") && !e.received && !e.paid).reduce((sum,e)=>sum+(Number(e.amount)||0),0);
       const netOut = evs.filter(e => (e.kind === "expense-due" && !e.paid) || (e.kind === "spend" && e.txType === "expense")).reduce((sum,e)=>sum+(Number(e.amount)||0),0);
       let amtLine = "";
@@ -1898,7 +1917,7 @@
       const dateKey = mk + "-" + String(d).padStart(2, "0");
       const hasNote = !!(data.config.calendarNotes && String(data.config.calendarNotes[dateKey] || "").trim());
       const aria = monthLabel(mk) + ', ' + d + (evs.length ? ', ' + evs.length + ' financial item' + (evs.length === 1 ? '' : 's') : ', no financial items') + (hasNote ? ', has note' : '');
-      html += '<button type="button" class="cal-cell' + (isToday ? " today" : "") + (isSelected ? " selected" : "") + '" aria-label="' + esc(aria) + '" data-action="cal-select" data-day="' + d + '"><span class="cal-daynum">' + d + (hasNote ? ' <span class="cal-note-mark" title="Has note" aria-label="Has note">✎</span>' : '') + '</span>' + amtLine + '<div class="cal-dots">' + dots + '</div></button>';
+      html += '<button type="button" class="cal-cell' + (isToday ? " today" : "") + (isSelected ? " selected" : "") + (hasOverdue ? " overdue" : "") + '" aria-label="' + esc(aria + (hasOverdue ? ", overdue payment" : "")) + '" data-action="cal-select" data-day="' + d + '"><span class="cal-daynum">' + d + (hasOverdue ? ' <span class="cal-overdue-mark" title="Overdue payment" aria-label="Overdue payment">!</span>' : '') + (hasNote ? ' <span class="cal-note-mark" title="Has note" aria-label="Has note">✎</span>' : '') + '</span>' + amtLine + '<div class="cal-dots">' + dots + '</div></button>';
     }
     html += '</div><div class="cal-legend"><span><i class="dot" style="background:var(--accent);"></i>expected</span><span><i class="dot" style="background:var(--warn);"></i>due</span><span><i class="dot" style="background:var(--bad);"></i>overdue</span><span><i class="dot" style="background:var(--good);"></i>done</span></div></div>';
     html += '</section>';
@@ -2558,9 +2577,9 @@
         '</div>'
       : '<div class="tt-events"><div class="tt-events-title">Financial events</div><div class="small-muted">No fixed / planned event on this date.</div></div>';
     return '<div class="tt-date">'+(labelPrefix ? esc(labelPrefix+' · ') : '')+esc(formatForecastDate(day.date))+'</div>' +
-      '<div class="tt-row"><span>Projected cash</span><b>'+fmt(day.balance)+'</b></div>' +
+      '<div class="tt-row"><span>Projected cash</span><b class="'+(Number(day.balance)<0?"forecast-bad":(Number(day.balance)<Number(f.safetyBuffer||0)?"forecast-warn":"forecast-ok"))+'">'+fmt(day.balance)+'</b></div>' +
       '<div class="tt-row"><span>Daily change</span><b style="color:'+(change<0?'var(--bad)':'var(--good)')+';">'+(change>=0?'+':'')+fmt(change)+'</b></div>' +
-      '<div class="tt-row"><span>Safe amount after buffer</span><b>'+fmt(safeAfterBuffer)+'</b></div>' +
+      '<div class="tt-row"><span>Safe amount after buffer</span><b class="'+(safeAfterBuffer<0?"forecast-bad":"forecast-ok")+'">'+fmt(safeAfterBuffer)+'</b></div>' +
       '<div class="tt-row"><span>Income</span><b>+'+fmt(income)+'</b></div>' +
       '<div class="tt-row"><span>Fixed bills</span><b>-'+fmt(bills)+'</b></div>' +
       '<div class="tt-row"><span>Budget spending</span><b>-'+fmt(budget)+'</b></div>' +
@@ -2585,9 +2604,9 @@
     if (!day) return '';
     return '<div class="forecast-pinned-head"><span class="forecast-pinned-date">Pinned projected date · '+esc(formatForecastDate(day.date))+'</span><span class="status-pill good">Projected</span></div>' +
       '<div class="forecast-pinned-grid">' +
-        '<div>Projected cash<b>'+fmt(day.balance)+'</b></div>' +
+        '<div>Projected cash<b class="'+(Number(day.balance)<0?"forecast-bad":(Number(day.balance)<Number(f.safetyBuffer||0)?"forecast-warn":"forecast-ok"))+'">'+fmt(day.balance)+'</b></div>' +
         '<div>Daily change<b>'+((day.net>=0?'+':'')+fmt(day.net))+'</b></div>' +
-        '<div>Safe after buffer<b>'+fmt(Number(day.balance)-Number(f.potTotal||0)-Number(f.safetyBuffer||0))+'</b></div>' +
+        '<div>Safe after buffer<b class="'+(Number(day.balance)-Number(f.potTotal||0)-Number(f.safetyBuffer||0)<0?"forecast-bad":"forecast-ok")+'">'+fmt(Number(day.balance)-Number(f.potTotal||0)-Number(f.safetyBuffer||0))+'</b></div>' +
         '<div>Budget spend<b>-'+fmt(day.budgetSpend||0)+'</b></div>' +
       '</div>' +
       '<div class="note" style="margin-top:6px;">'+((day.events||[]).length ? day.events.map(e=>esc(e.reason)+' '+(e.amount>=0?'+':'-')+fmt(Math.abs(e.amount))).join(' · ') : 'No fixed or planned event on this date.')+'</div>';
