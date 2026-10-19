@@ -5,6 +5,7 @@ on:
   push:
     paths:
       - 'scripts/patch_wallets.py'
+      - '.github/workflows/apply-wallet-reconciliation.yml'
 
 permissions:
   contents: write
