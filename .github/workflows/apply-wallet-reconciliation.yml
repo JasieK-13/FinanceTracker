@@ -1,0 +1,30 @@
+name: Apply wallet reconciliation update
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'scripts/patch_wallets.py'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Apply wallet and reconciliation feature
+        run: python scripts/patch_wallets.py
+      - name: Commit generated update
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          if git diff --quiet; then
+            echo 'No changes needed.'
+          else
+            git add index.html
+            git commit -m 'Add account wallets and reconciliation'
+            git push
+          fi
