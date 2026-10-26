@@ -487,6 +487,11 @@
   function esc(s) { return escapeHtml(s); }
   function data0(key) { return data.config[key] || (key === "personA" ? "Jasiek" : "Partner"); }
   function slugify(s) { return String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, ""); }
+  // Household ledger starts with Partner SFE on 28 Sep 2026. Nothing before this date is household history.
+  const HOUSEHOLD_LEDGER_START = "2026-09-28";
+  function isHouseholdLedgerTransaction(tx) {
+    return tx && /^(income|expense)$/.test(String(tx.type || "")) && String(tx.date || "") >= HOUSEHOLD_LEDGER_START;
+  }
 
   // ---------- Supabase cloud database adapter ----------
   // The publishable browser key is safe to embed in this client only because the
@@ -1385,7 +1390,7 @@
   function monthEndDate(date) { return new Date(date.getFullYear(), date.getMonth() + 1, 0); }
   function getBudgetSpentForMonth(budgetId, mk, fallbackName) {
     return data.transactions.filter(tx => {
-      if (tx.type !== "expense" || monthKey(tx.date) !== mk) return false;
+      if (!isHouseholdLedgerTransaction(tx) || tx.type !== "expense" || monthKey(tx.date) !== mk) return false;
       if (tx.budgetId === budgetId) return true;
       if (tx.budgetId) return false;
       const desc = String(tx.description || "").trim().toLowerCase();
@@ -1427,6 +1432,7 @@
     const end = forecastHorizonEnd(mode || "90"); end.setHours(0,0,0,0);
     const horizonDays = Math.max(0, Math.floor((end - today) / 86400000));
     const startingCash = (Number(data.config.startingBalance) || 0) + data.transactions.reduce((s, tx) => {
+      if (!isHouseholdLedgerTransaction(tx)) return s;
       if (tx.type === "income") return s + (Number(tx.amount) || 0);
       if (tx.type === "expense") return s - (Number(tx.amount) || 0);
       return s;
@@ -1569,6 +1575,17 @@
     const catSpend = {}; const subcatSpend = {};
     data.transactions.forEach(t => {
       const amt = Number(t.amount) || 0;
+      if (t.type === "transfer") {
+        // Internal pot moves are not household cash movements. Keep post-baseline
+        // allocations for the Pots view, but never include them in Cash Now.
+        if (String(t.date || "") >= HOUSEHOLD_LEDGER_START) {
+          transfer += amt;
+          const pot = t.pot || "Other";
+          pots[pot] = (pots[pot] || 0) + amt;
+        }
+        return;
+      }
+      if (!isHouseholdLedgerTransaction(t)) return;
       if (t.type === "income") {
         income += amt;
         if (t.reserved) pots[t.reserved] = (pots[t.reserved] || 0) + amt;
@@ -1581,10 +1598,6 @@
           const key = t.category + "|" + (t.subcategory || "").trim().toLowerCase();
           subcatSpend[key] = (subcatSpend[key] || 0) + amt;
         }
-      } else if (t.type === "transfer") {
-        transfer += amt;
-        const pot = t.pot || "Other";
-        pots[pot] = (pots[pot] || 0) + amt;
       }
     });
     const startingBalance = Number(data.config.startingBalance) || 0;
@@ -2306,7 +2319,7 @@
     const start = addDaysLocal(today, -29);
     const startKey = dateKeyLocal(start);
     const endKey = todayStr();
-    const spent = data.transactions.filter(tx => tx.type === "expense" && !tx.reserved && tx.date >= startKey && tx.date <= endKey).reduce((s,tx)=>s+(Number(tx.amount)||0),0);
+    const spent = data.transactions.filter(tx => isHouseholdLedgerTransaction(tx) && tx.type === "expense" && !tx.reserved && tx.date >= startKey && tx.date <= endKey).reduce((s,tx)=>s+(Number(tx.amount)||0),0);
     const weeks = 30/7;
     return { last30:spent, weekly:spent/weeks, monthly:spent };
   }
