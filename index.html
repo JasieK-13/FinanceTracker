@@ -1427,7 +1427,7 @@
     const today = dateFromISO(todayStr()); today.setHours(0,0,0,0);
     const end = forecastHorizonEnd(mode || "90"); end.setHours(0,0,0,0);
     const horizonDays = Math.max(0, Math.floor((end - today) / 86400000));
-    const startingCash = (Number(data.config.startingBalance) || 0) + data.transactions.reduce((s, tx) => {
+    const startingCash = (Number(data.config.startingBalance) || 0) + data.transactions.filter(tx => !tx.personal).reduce((s, tx) => {
       if (tx.type === "income") return s + (Number(tx.amount) || 0);
       if (tx.type === "expense") return s - (Number(tx.amount) || 0);
       return s;
@@ -1569,6 +1569,7 @@
     let viewIncome = 0, viewEssential = 0, viewNonEssential = 0;
     const catSpend = {}; const subcatSpend = {};
     data.transactions.forEach(t => {
+      if (t.personal) return;
       const amt = Number(t.amount) || 0;
       if (t.type === "income") {
         income += amt;
@@ -1589,6 +1590,7 @@
       }
     });
     const startingBalance = Number(data.config.startingBalance) || 0;
+    const personalMoney = data.transactions.filter(tx => tx.personal && (tx.type === "income" || tx.type === "expense")).reduce((sum, tx) => sum + (tx.type === "income" ? 1 : -1) * (Number(tx.amount) || 0), 0);
     const cashNow = startingBalance + income - expense;
     const potTotal = Object.entries(pots).filter(([name]) => !NON_FINANCIAL_POTS.has(name)).reduce((a,[,b])=>a+b,0);
     const bills = data.commitments.filter(c => (c.kind || "expense") === "expense" && (c.commitType || "bill") === "bill");
@@ -1602,7 +1604,7 @@
     const sfeExpected = data.scheduled.filter(s=>s.source==="SFE" && s.status==="expected").reduce((sum,s)=>sum+(Number(s.expectedAmount)||0),0);
     const budgetsUsage = budgets.filter(b=>b.active).map(b=>{
       const key=b.category+"|"+(b.subcategory||b.name||"").trim().toLowerCase();
-      const spent=data.transactions.filter(tx=>tx.type==="expense"&&monthKey(tx.date)===viewMk&&(tx.budgetId===b.id||(!tx.budgetId&&(tx.category+"|"+(tx.subcategory||"").trim().toLowerCase())===key)||(!tx.budgetId&&!tx.subcategory&&String(tx.description||"").trim().toLowerCase()===String(b.name||"").trim().toLowerCase()))).reduce((sum,tx)=>sum+(Number(tx.amount)||0),0);
+      const spent=data.transactions.filter(tx=>!tx.personal&&tx.type==="expense"&&monthKey(tx.date)===viewMk&&(tx.budgetId===b.id||(!tx.budgetId&&(tx.category+"|"+(tx.subcategory||"").trim().toLowerCase())===key)||(!tx.budgetId&&!tx.subcategory&&String(tx.description||"").trim().toLowerCase()===String(b.name||"").trim().toLowerCase()))).reduce((sum,tx)=>sum+(Number(tx.amount)||0),0);
       return { id:b.id,name:b.name,category:b.category,limit:Number(b.amount)||0,spent,remaining:(Number(b.amount)||0)-spent,essential:!!b.essential };
     });
     const aviationFunding=data.aviation.filter(a=>a.kind==="funding").reduce((s,a)=>s+(Number(a.amount)||0),0);
@@ -1611,7 +1613,7 @@
     const aviationContrib=pots["Aviation"]||0;
     const aviationTotal=aviationContrib+aviationLedgerBalance;
     const bursaryExpected=data.scheduled.filter(s=>s.source===AVIATION_FUNDING_SOURCE&&s.status==="expected").reduce((s,x)=>s+(Number(x.expectedAmount)||0),0);
-    return {income,expense,transfer,cashNow,pots,potTotal,committed,committedItems,overdueBills,safeToSpend,viewIncome,viewEssential,viewNonEssential,catSpend,sfeReceived,sfeExpected,realMk,viewMk,bills,budgets,budgetsUsage,recurringIncome,aviationFunding,aviationSpent,aviationLedgerBalance,aviationContrib,aviationTotal,bursaryExpected, safetyBuffer:getForecastConfig().safetyBuffer};
+    return {income,expense,transfer,cashNow,pots,personalMoney,potTotal,committed,committedItems,overdueBills,safeToSpend,viewIncome,viewEssential,viewNonEssential,catSpend,sfeReceived,sfeExpected,realMk,viewMk,bills,budgets,budgetsUsage,recurringIncome,aviationFunding,aviationSpent,aviationLedgerBalance,aviationContrib,aviationTotal,bursaryExpected, safetyBuffer:getForecastConfig().safetyBuffer};
   }
   function computeTotals() {
     const base = computeBaseTotals();
@@ -2058,7 +2060,8 @@
     } else {
       html += '<div class="add-section closed"><button type="button" class="btn primary" data-action="open-expense-form">+ Add expense</button></div>';
     }
-    const expenses = data.transactions.filter(tx => tx.type === "expense");
+    const expenses = data.transactions.filter(tx => tx.type === "expense" && !tx.personal);
+    const personalExpenses = data.transactions.filter(tx => tx.type === "expense" && tx.personal);
     const months = Array.from(new Set(expenses.map(tx => monthKey(tx.date)))).filter(Boolean).sort().reverse();
     html += '<div class="section-title first">Spending history</div>';
     html += '<div class="toolbar"><select class="filter-select" id="filter-month"><option value="">All months</option>' + months.map(m => '<option value="' + m + '"' + (uiState.spendFilterMonth === m ? " selected" : "") + '>' + esc(monthLabel(m)) + '</option>').join("") + '</select>' +
@@ -2068,6 +2071,18 @@
     html += '<div class="card-sub" style="margin-bottom:10px;">' + filtered.length + ' transactions · ' + fmt(totalShown) + ' total</div>';
     if (filtered.length === 0) html += '<div class="card"><div class="empty">No spending matches.</div></div>';
     else { html += '<div class="card">'; filtered.forEach(tx => { html += transactionRow(tx); }); html += '</div>'; }
+    html += '<div class="section-title">Jasiek Personal Money</div>';
+    html += '<div class="card" style="border-left:4px solid var(--accent);">';
+    html += '<div class="card-sub" style="margin-bottom:10px;">Personal spending only · does not affect household totals, Safe to Spend, forecasts, budgets or household pots.</div>';
+    html += '<form class="entry" id="personal-exp-form" style="margin-bottom:0;">';
+    html += '<div class="field-row"><div class="field"><label>Amount (£)</label><input type="number" id="personal-exp-amount" step="0.01" min="0" required></div><div class="field"><label>Category</label><select id="personal-exp-category">' + EXPENSE_CATEGORIES.map(c => '<option>' + esc(c) + '</option>').join("") + '</select></div></div>';
+    html += '<div class="field-row"><div class="field"><label>Description</label><input type="text" id="personal-exp-description" placeholder="e.g. lunch, clothes, hobby"></div><div class="field"><label>Date</label><input type="date" id="personal-exp-date" value="' + todayStr() + '"></div></div>';
+    html += '<div class="field-row"><div class="field"><label>Subcategory <span class="note">optional</span></label><input type="text" id="personal-exp-subcategory"></div><div class="field"><label>Note <span class="note">optional</span></label><input type="text" id="personal-exp-notes"></div></div>';
+    html += '<div class="row-actions"><button type="submit" class="btn primary">Add personal expense</button></div></form>';
+    const personalSorted = personalExpenses.slice().sort((a,b) => (b.date || "").localeCompare(a.date || ""));
+    if (personalSorted.length) { html += '<div style="margin-top:12px;">'; personalSorted.forEach(tx => { html += transactionRow(tx); }); html += '</div>'; }
+    else html += '<div class="empty">No personal spending logged yet.</div>';
+    html += '</div>';
     return html;
   }
 
@@ -2240,9 +2255,22 @@
     else { expectedScheduled.forEach(s => { html += scheduledRow(s); }); expectedRecurring.forEach(c => { html += commitmentRow(c, t.realMk); }); }
     html += '</div>';
     html += '<div class="section-title">Received</div><div class="card">';
-    const received = data.transactions.filter(tx => tx.type === "income" && !tx.reserved);
+    const received = data.transactions.filter(tx => tx.type === "income" && !tx.reserved && !tx.personal);
+    const personalIncome = data.transactions.filter(tx => tx.type === "income" && tx.personal);
     if (received.length === 0) html += '<div class="empty">No income logged yet.</div>';
     else received.forEach(tx => { html += transactionRow(tx); });
+    html += '</div>';
+    html += '<div class="section-title">Jasiek Personal Money</div>';
+    html += '<div class="card" style="border-left:4px solid var(--good);">';
+    html += '<div class="card-sub" style="margin-bottom:10px;">Personal income only · does not affect household totals, Safe to Spend, forecasts or household income.</div>';
+    html += '<form class="entry" id="personal-income-form" style="margin-bottom:0;">';
+    html += '<div class="field-row"><div class="field"><label>Amount (£)</label><input type="number" id="personal-income-amount" step="0.01" min="0" required></div><div class="field"><label>Source</label><select id="personal-income-category">' + INCOME_CATEGORIES.map(c => '<option>' + esc(c) + '</option>').join("") + '</select></div></div>';
+    html += '<div class="field-row"><div class="field"><label>Description</label><input type="text" id="personal-income-description" placeholder="e.g. 111 pay, Amazon Flex"></div><div class="field"><label>Date</label><input type="date" id="personal-income-date" value="' + todayStr() + '"></div></div>';
+    html += '<div class="field-row single"><div class="field"><label>Note <span class="note">optional</span></label><input type="text" id="personal-income-notes"></div></div>';
+    html += '<div class="row-actions"><button type="submit" class="btn primary">Add personal income</button></div></form>';
+    const personalIncomeSorted = personalIncome.slice().sort((a,b) => (b.date || "").localeCompare(a.date || ""));
+    if (personalIncomeSorted.length) { html += '<div style="margin-top:12px;">'; personalIncomeSorted.forEach(tx => { html += transactionRow(tx); }); html += '</div>'; }
+    else html += '<div class="empty">No personal income logged yet.</div>';
     html += '</div>';
     return html;
   }
@@ -2264,7 +2292,7 @@
     let html = '<div class="section-title first">Your pots</div><div class="list-grid">';
     potNames.forEach(p => {
       const isAviation = p === "Aviation";
-      const amount = isAviation ? t.aviationTotal : (t.pots[p] || 0);
+      const amount = isAviation ? t.aviationTotal : (p === "Jasiek Personal Money" ? (t.personalMoney || 0) : (t.pots[p] || 0));
       const target = Number(data.config.potTargets && data.config.potTargets[p]) || 0;
       const editingTarget = uiState.editingPotTarget === p;
       html += '<div class="card"' + (isAviation ? ' style="border-left:4px solid var(--aviation);"' : '') + '><div class="pot-row-top"><span class="pot-name" style="font-size:15px;">' + esc(p) + (isAviation ? ' <span class="tag" style="background:var(--aviation-soft);color:var(--aviation);">separate ledger</span>' : '') + '</span><span class="pot-amt" style="font-size:16px;">' + fmt(amount) + (target > 0 ? ' <span class="note">/ ' + fmt(target) + '</span>' : '') + '</span></div>';
@@ -2889,6 +2917,35 @@
     }; });
     const fMonth = document.getElementById("filter-month"); if (fMonth) fMonth.onchange = () => { uiState.spendFilterMonth = fMonth.value; render(); };
     const fPerson = document.getElementById("filter-person"); if (fPerson) fPerson.onchange = () => { uiState.spendFilterPerson = fPerson.value; render(); };
+
+    // Jasiek Personal Money
+    const personalExpForm = document.getElementById("personal-exp-form");
+    if (personalExpForm) personalExpForm.onsubmit = async (e) => {
+      e.preventDefault();
+      const amount = Math.abs(Number(document.getElementById("personal-exp-amount").value) || 0);
+      if (!amount) return;
+      const date = document.getElementById("personal-exp-date").value || todayStr();
+      const category = document.getElementById("personal-exp-category").value || "Other";
+      const description = (document.getElementById("personal-exp-description").value || "").trim() || "Personal spending";
+      const subcategory = (document.getElementById("personal-exp-subcategory").value || "").trim();
+      const notes = document.getElementById("personal-exp-notes").value || "";
+      const rec = { type:"expense", personal:true, date, amount, category, subcategory, description, essential:false, person:data0("personA"), notes, createdAt:Date.now() };
+      const ok = await safeWrite(() => db.collection("transactions").add(rec));
+      if (ok) { personalExpForm.reset(); document.getElementById("personal-exp-date").value = todayStr(); render(); }
+    };
+    const personalIncomeForm = document.getElementById("personal-income-form");
+    if (personalIncomeForm) personalIncomeForm.onsubmit = async (e) => {
+      e.preventDefault();
+      const amount = Math.abs(Number(document.getElementById("personal-income-amount").value) || 0);
+      if (!amount) return;
+      const date = document.getElementById("personal-income-date").value || todayStr();
+      const category = document.getElementById("personal-income-category").value || "Other";
+      const description = (document.getElementById("personal-income-description").value || "").trim() || "Personal income";
+      const notes = document.getElementById("personal-income-notes").value || "";
+      const rec = { type:"income", personal:true, date, amount, category, description, person:data0("personA"), notes, createdAt:Date.now() };
+      const ok = await safeWrite(() => db.collection("transactions").add(rec));
+      if (ok) { personalIncomeForm.reset(); document.getElementById("personal-income-date").value = todayStr(); render(); }
+    };
 
     // Bills
     document.querySelectorAll('[data-action="toggle-bill"]').forEach(el => { el.addEventListener("click", function (e) { if (e.target.closest(".inline-log") || e.target.closest("button")) return; const id = this.dataset.id; if (uiState.editingCommitmentId === id) uiState.editingCommitmentId = null; else if (uiState.openLogs[id]) delete uiState.openLogs[id]; else uiState.openLogs[id] = true; render(); }); });
