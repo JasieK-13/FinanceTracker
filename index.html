@@ -2088,6 +2088,7 @@
 
   function formHtml_addExpenseSimple() {
     const adv = uiState.expenseAdvanced;
+    const expenseSource = uiState.expenseSource || "household";
     const presets = getExpensePresets();
     const selected = findExpensePreset(uiState.expensePreset);
     const presetOptions = '<option value="">Choose a budget, bill or Other…</option>' +
@@ -2095,8 +2096,13 @@
       (presets.bills.length ? '<optgroup label="Bills">' + presets.bills.map(p => '<option value="' + esc(p.id) + '"' + (uiState.expensePreset === p.id ? ' selected' : '') + '>' + esc(p.label) + '</option>').join('') + '</optgroup>' : '') +
       '<option value="other"' + (uiState.expensePreset === 'other' ? ' selected' : '') + '>Other</option>';
     const otherSelected = uiState.expensePreset === 'other' || !selected;
+    const sourceOptions = '<option value="household"' + (expenseSource === "household" ? ' selected' : '') + '>Household money</option><option value="personal"' + (expenseSource === "personal" ? ' selected' : '') + '>Jasiek Personal Money</option>';
+    const destinationField = expenseSource === "personal"
+      ? '<div class="field"><label>Category</label><select id="exp-personal-category" required>' + EXPENSE_CATEGORIES.map(c => '<option>' + esc(c) + '</option>').join("") + '</select></div>'
+      : '<div class="field"><label>Budget / bill / other</label><select id="exp-preset" required>' + presetOptions + '</select></div>';
     return '<form class="entry" id="exp-form">' +
-      '<div class="field-row"><div class="field"><label>Amount (£)</label><input type="number" id="exp-amount" step="0.01" min="0" required></div><div class="field"><label>Budget / bill / other</label><select id="exp-preset" required>' + presetOptions + '</select></div></div>' +
+      '<div class="field-row"><div class="field"><label>Money source</label><select id="exp-source" required>' + sourceOptions + '</select></div><div class="field"><label>Amount (£)</label><input type="number" id="exp-amount" step="0.01" min="0" required></div></div>' +
+      '<div class="field-row">' + destinationField + '<div class="field"><label>Description <span class="note">optional</span></label><input type="text" id="exp-description" placeholder="e.g. Tesco, Shell, shop name"></div></div>' +
       '<div class="field-row"><div class="field"><label>Description <span class="note">optional</span></label><input type="text" id="exp-description" placeholder="e.g. Tesco, Shell, shop name"></div><div class="field"><label>Person</label><select id="exp-person"><option>Joint</option><option>' + esc(data0("personA")) + '</option><option>' + esc(data0("personB")) + '</select></div></div>' +
       '<div class="preset-note" id="exp-preset-note">' + (selected ? ('Linked to ' + esc(selected.type) + ': <strong>' + esc(selected.label) + '</strong>') : (otherSelected && uiState.expensePreset === 'other' ? 'Other spending — enter a description.' : 'Choose a preset so the app links the spending to the correct budget or bill automatically.')) + '</div>' +
       '<div style="margin-top:6px;"><button type="button" class="link-btn" id="exp-toggle-advanced">' + (adv ? "Hide options" : "More options") + '</button></div>' +
@@ -2494,7 +2500,7 @@
           const person = document.getElementById("qa-e-person").value;
           const rec = { type:"expense", date:todayStr(), amount:amt, category:chosen ? chosen.category : "Other", subcategory:chosen ? chosen.subcategory : "", description:description || (chosen ? chosen.label : "Other"), essential:chosen ? !!chosen.essential : false, person, notes:"", createdAt:Date.now() };
           if (chosen && chosen.type === "budget") { rec.budgetId=chosen.id; rec.presetId=chosen.id; }
-          if (chosen && chosen.type === "bill") { rec.sourceCommitmentId=chosen.id; rec.presetId=chosen.id; }
+          if (!isPersonal && chosen && chosen.type === "bill") { rec.sourceCommitmentId=chosen.id; rec.presetId=chosen.id; }
           const ok = await safeWrite(() => db.collection("transactions").add(rec));
           if (ok) { status.textContent = "Added ✓"; status.style.color = "var(--good)"; setTimeout(() => { sheet.hidden = true; }, 600); }
           else { status.textContent = "Couldn't save — try again."; this.disabled = false; }
@@ -2829,6 +2835,8 @@
     const expForm = document.getElementById("exp-form");
     if (expForm) {
       const advToggle = document.getElementById("exp-toggle-advanced"); if (advToggle) advToggle.onclick = (e) => { e.preventDefault(); uiState.expenseAdvanced = !uiState.expenseAdvanced; render(); };
+      const source = document.getElementById("exp-source");
+      if (source) source.onchange = () => { uiState.expenseSource = source.value; uiState.expensePreset = ""; render(); };
       const preset = document.getElementById("exp-preset");
       if (preset) preset.onchange = () => {
         uiState.expensePreset = preset.value;
@@ -2847,19 +2855,22 @@
         e.preventDefault();
         const amt = Math.abs(parseFloat(document.getElementById("exp-amount").value) || 0);
         if (!amt) return;
-        const selectedId = document.getElementById("exp-preset").value;
-        if (!selectedId) return;
-        const chosen = findExpensePreset(selectedId);
+        const sourceValue = document.getElementById("exp-source").value || "household";
+        const isPersonal = sourceValue === "personal";
+        const selectedId = isPersonal ? "" : document.getElementById("exp-preset").value;
+        if (!isPersonal && !selectedId) return;
+        const chosen = isPersonal ? null : findExpensePreset(selectedId);
         const description = (document.getElementById("exp-description").value || "").trim();
-        if (selectedId === "other" && !description) { const note=document.getElementById("exp-preset-note"); if(note){note.textContent="Please enter a description for Other spending."; note.style.color="var(--bad)";} return; }
-        const person = document.getElementById("exp-person").value;
-        const category = chosen ? chosen.category : "Other";
+        if (!isPersonal && selectedId === "other" && !description) { const note=document.getElementById("exp-preset-note"); if(note){note.textContent="Please enter a description for Other spending."; note.style.color="var(--bad)";} return; }
+        const person = isPersonal ? data0("personA") : document.getElementById("exp-person").value;
+        const category = isPersonal ? (document.getElementById("exp-personal-category").value || "Other") : (chosen ? chosen.category : "Other");
         const notes = uiState.expenseAdvanced ? (document.getElementById("exp-notes").value || "") : "";
         const date = uiState.expenseAdvanced ? (document.getElementById("exp-date").value || todayStr()) : todayStr();
-        const subcategory = chosen ? chosen.subcategory : (uiState.expenseAdvanced ? (document.getElementById("exp-subcategory").value || "") : "");
-        const essential = uiState.expenseAdvanced ? document.getElementById("exp-essential").value === "true" : (chosen ? !!chosen.essential : false);
-        const rec = { type:"expense", date, amount:amt, category, subcategory, description: description || (chosen ? chosen.label : "Other"), essential, person, notes, createdAt:Date.now() };
-        if (chosen && chosen.type === "budget") { rec.budgetId = chosen.id; rec.presetId = chosen.id; }
+        const subcategory = isPersonal ? (uiState.expenseAdvanced ? (document.getElementById("exp-subcategory").value || "") : "") : (chosen ? chosen.subcategory : (uiState.expenseAdvanced ? (document.getElementById("exp-subcategory").value || "") : ""));
+        const essential = isPersonal ? false : (uiState.expenseAdvanced ? document.getElementById("exp-essential").value === "true" : (chosen ? !!chosen.essential : false));
+        const rec = { type:"expense", date, amount:amt, category, subcategory, description: description || (isPersonal ? "Personal spending" : (chosen ? chosen.label : "Other")), essential, person, notes, createdAt:Date.now() };
+        if (isPersonal) rec.personal = true;
+        if (!isPersonal && chosen && chosen.type === "budget") { rec.budgetId = chosen.id; rec.presetId = chosen.id; }
         let ok;
         if (chosen && chosen.type === "bill") {
           rec.sourceCommitmentId = chosen.id; rec.presetId = chosen.id;
@@ -2872,7 +2883,7 @@
         } else {
           ok = await safeWrite(() => db.collection("transactions").add(rec));
         }
-        if (ok) { expForm.reset(); uiState.expensePreset = ""; render(); }
+        if (ok) { expForm.reset(); uiState.expensePreset = ""; uiState.expenseSource = "household"; render(); }
       };
     }
     const txEditForm = document.getElementById("tx-edit-form");
