@@ -461,8 +461,8 @@
   const INCOME_CATEGORIES = ["SFE", "SCAS 111", "Uber/Flex", "Other"];
   const AVIATION_EXPENSE_CATEGORIES = ["ATPL Theory", "Flying Hours", "Medical", "Exams", "Licence Fees", "Equipment", "Other"];
   const AVIATION_FUNDING_SOURCE = "BNU Bursary";
-  const POTS = ["Aviation", "Emergency Fund", "General Savings", "Investments", "Other", "Jasiek Personal Money"];
-  const NON_FINANCIAL_POTS = new Set(["Jasiek Personal Money"]);
+  const POTS = ["Aviation", "Emergency Fund", "General Savings", "Investments", "Other", "Jasiek Personal Money", "Child Trust Fund"];
+  const NON_FINANCIAL_POTS = new Set(["Jasiek Personal Money", "Child Trust Fund"]);
   const CATEGORY_COLORS = { "Housing": "#D97A4D", "Food & Household": "#6B9E5D", "Transport": "#D9A441", "Bills & Subscriptions": "#8C6FB0", "Health & Fitness": "#C75B4A", "University": "#7A6A54", "Aviation": "#8C6FB0", "Fun & Lifestyle": "#D97A4D", "Other": "#A69783" };
   const CATEGORY_ESSENTIAL_DEFAULT = { "Housing": true, "Food & Household": true, "Transport": true, "Bills & Subscriptions": false, "Health & Fitness": false, "University": true, "Aviation": false, "Fun & Lifestyle": false, "Other": false };
   const BUDGET_NAME_HINTS = ["groceries", "fuel", "eating out"];
@@ -1398,6 +1398,7 @@
   function sumCurrentPotBalances() {
     const pots = {};
     data.transactions.forEach(tx => {
+      if (tx.personal) return;
       if (tx.type === "transfer") pots[tx.pot || "Other"] = (pots[tx.pot || "Other"] || 0) + (Number(tx.amount) || 0);
       if (tx.type === "income" && tx.reserved) pots[tx.reserved] = (pots[tx.reserved] || 0) + (Number(tx.amount) || 0);
     });
@@ -1826,6 +1827,7 @@
       add(day, { kind: "scheduled", label: s.source + " — " + s.person, amount: s.expectedAmount, id: s.id, received: false, sourceScheduledId: s.id });
     });
     data.transactions.forEach(tx => {
+      if (tx.personal) return;
       if (monthKey(tx.date) !== mk) return;
       const day = Number((tx.date || "").slice(8, 10)); if (!day) return;
       add(day, { kind: "spend", label: (tx.category || "") + (tx.subcategory ? " · " + tx.subcategory : ""), amount: tx.amount, txType: tx.type, id: tx.id });
@@ -2572,6 +2574,7 @@
 
     const byDate = {};
     data.transactions.forEach(tx => {
+      if (tx.personal) return;
       if ((tx.type !== "income" && tx.type !== "expense") || !/^\d{4}-\d{2}-\d{2}$/.test(String(tx.date || ""))) return;
       const d = dateFromISO(tx.date); d.setHours(0,0,0,0);
       if (d < start || d > end) return;
