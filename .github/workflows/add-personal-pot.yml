@@ -1,0 +1,40 @@
+name: Add Jasiek Personal Money pot
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  patch:
+    if: github.actor == 'JasieK-13'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch tracker
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('index.html')
+          s = p.read_text()
+          old = 'const POTS = ["Aviation", "Emergency Fund", "General Savings", "Investments", "Other"];'
+          new = 'const POTS = ["Aviation", "Emergency Fund", "General Savings", "Investments", "Other", "Jasiek Personal Money"];\n  const NON_FINANCIAL_POTS = new Set(["Jasiek Personal Money"]);'
+          if old not in s: raise SystemExit('POTS declaration not found or already patched')
+          s = s.replace(old, new, 1)
+          old = 'const potTotal = Object.values(pots).reduce((a,b)=>a+b,0);'
+          new = 'const potTotal = Object.entries(pots).filter(([name]) => !NON_FINANCIAL_POTS.has(name)).reduce((a,[,b])=>a+b,0);'
+          if old not in s: raise SystemExit('computeBaseTotals potTotal line not found')
+          s = s.replace(old, new, 1)
+          old = 'return Object.values(pots).reduce((s, x) => s + Number(x || 0), 0);'
+          new = 'return Object.entries(pots).filter(([name]) => !NON_FINANCIAL_POTS.has(name)).reduce((s, [,x]) => s + Number(x || 0), 0);'
+          if old not in s: raise SystemExit('forecast pot total line not found')
+          s = s.replace(old, new, 1)
+          p.write_text(s)
+          PY
+      - name: Commit tracker change and remove patch workflow
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          rm -f .github/workflows/add-personal-pot.yml
+          git add index.html .github/workflows/add-personal-pot.yml
+          git commit -m 'Add Jasiek Personal Money visual-only pot'
+          git push
