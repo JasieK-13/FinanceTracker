@@ -1,0 +1,42 @@
+name: Fix personal expense form layout
+on:
+  push:
+    branches: [main]
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+      - name: Remove duplicate description field
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('index.html')
+          s=p.read_text()
+          dup='''      '<div class="field-row"><div class="field">' + destinationField + '<div class="field"><label>Description <span class="note">optional</span></label><input type="text" id="exp-description" placeholder="e.g. Tesco, Shell, shop name"></div></div>' +\n      '<div class="field-row"><div class="field"><label>Description <span class="note">optional</span></label><input type="text" id="exp-description" placeholder="e.g. Tesco, Shell, shop name"></div><div class="field"><label>Person</label><select id="exp-person"><option>Joint</option><option>' + esc(data0("personA")) + '</option><option>' + esc(data0("personB")) + '</select></div></div>' +'''
+          fixed='''      '<div class="field-row">' + destinationField + '<div class="field"><label>Description <span class="note">optional</span></label><input type="text" id="exp-description" placeholder="e.g. Tesco, Shell, shop name"></div></div>' +\n      '<div class="field-row"><div class="field"><label>Person</label><select id="exp-person"><option>Joint</option><option>' + esc(data0("personA")) + '</option><option>' + esc(data0("personB")) + '</select></div></div>' +'''
+          if dup not in s: raise SystemExit('duplicate form block not found')
+          s=s.replace(dup,fixed,1)
+          p.write_text(s)
+          PY
+      - name: Validate script syntax
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          s=Path('index.html').read_text()
+          Path('/tmp/app.js').write_text('\n'.join(re.findall(r'<script(?:[^>]*)>(.*?)</script>',s,flags=re.S|re.I)))
+          PY
+          node --check /tmp/app.js
+      - name: Commit and remove workflow
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add index.html
+          git commit -m 'Clean up personal expense form layout'
+          git push
+          git rm .github/workflows/fix-personal-expense-form.yml
+          git commit -m 'Remove temporary personal expense form workflow'
+          git push
