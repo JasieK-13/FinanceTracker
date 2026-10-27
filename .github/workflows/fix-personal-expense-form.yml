@@ -9,16 +9,19 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v6
-      - name: Remove duplicate description field
+      - name: Fix duplicate description field
         run: |
           python - <<'PY'
           from pathlib import Path
-          p=Path('index.html')
-          s=p.read_text()
-          dup='''      '<div class="field-row"><div class="field">' + destinationField + '<div class="field"><label>Description <span class="note">optional</span></label><input type="text" id="exp-description" placeholder="e.g. Tesco, Shell, shop name"></div></div>' +\n      '<div class="field-row"><div class="field"><label>Description <span class="note">optional</span></label><input type="text" id="exp-description" placeholder="e.g. Tesco, Shell, shop name"></div><div class="field"><label>Person</label><select id="exp-person"><option>Joint</option><option>' + esc(data0("personA")) + '</option><option>' + esc(data0("personB")) + '</select></div></div>' +'''
-          fixed='''      '<div class="field-row">' + destinationField + '<div class="field"><label>Description <span class="note">optional</span></label><input type="text" id="exp-description" placeholder="e.g. Tesco, Shell, shop name"></div></div>' +\n      '<div class="field-row"><div class="field"><label>Person</label><select id="exp-person"><option>Joint</option><option>' + esc(data0("personA")) + '</option><option>' + esc(data0("personB")) + '</select></div></div>' +'''
-          if dup not in s: raise SystemExit('duplicate form block not found')
-          s=s.replace(dup,fixed,1)
+          p = Path('index.html')
+          s = p.read_text()
+          old = '''      '<div class="field-row"><div class="field">' + destinationField + '<div class="field"><label>Description <span class="note">optional</span></label><input type="text" id="exp-description" placeholder="e.g. Tesco, Shell, shop name"></div></div>' +
+      '<div class="field-row"><div class="field"><label>Description <span class="note">optional</span></label><input type="text" id="exp-description" placeholder="e.g. Tesco, Shell, shop name"></div><div class="field"><label>Person</label><select id="exp-person"><option>Joint</option><option>' + esc(data0("personA")) + '</option><option>' + esc(data0("personB")) + '</select></div></div>' +'''
+          new = '''      '<div class="field-row">' + destinationField + '<div class="field"><label>Description <span class="note">optional</span></label><input type="text" id="exp-description" placeholder="e.g. Tesco, Shell, shop name"></div></div>' +
+      '<div class="field-row"><div class="field"><label>Person</label><select id="exp-person"><option>Joint</option><option>' + esc(data0("personA")) + '</option><option>' + esc(data0("personB")) + '</option></select></div></div>' +'''
+          if old not in s:
+              raise SystemExit('expected duplicate description block not found')
+          s = s.replace(old, new, 1)
           p.write_text(s)
           PY
       - name: Validate script syntax
@@ -26,8 +29,9 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           import re
-          s=Path('index.html').read_text()
-          Path('/tmp/app.js').write_text('\n'.join(re.findall(r'<script(?:[^>]*)>(.*?)</script>',s,flags=re.S|re.I)))
+          s = Path('index.html').read_text()
+          scripts = re.findall(r'<script(?:[^>]*)>(.*?)</script>', s, flags=re.S|re.I)
+          Path('/tmp/app.js').write_text('\n'.join(scripts))
           PY
           node --check /tmp/app.js
       - name: Commit and remove workflow
