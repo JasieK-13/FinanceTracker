@@ -1,0 +1,109 @@
+name: Add personal spending and income
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor == 'JasieK-13'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch tracker
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('index.html')
+          s = p.read_text()
+
+          def replace_once(old, new, label):
+              global s
+              if old not in s:
+                  raise SystemExit(f'{label} not found or already patched')
+              s = s.replace(old, new, 1)
+
+          # Household totals: personal transactions are completely outside the household ledger.
+          replace_once(
+              '    data.transactions.forEach(t => {\n      const amt = Number(t.amount) || 0;\n      if (t.type === "income") {',
+              '    data.transactions.forEach(t => {\n      if (t.personal) return;\n      const amt = Number(t.amount) || 0;\n      if (t.type === "income") {',
+              'computeBaseTotals personal exclusion'
+          )
+
+          # Still calculate the personal-only balance for the visual pot.
+          replace_once(
+              '    const startingBalance = Number(data.config.startingBalance) || 0;\n    const cashNow = startingBalance + income - expense;',
+              '    const startingBalance = Number(data.config.startingBalance) || 0;\n    const personalMoney = data.transactions.filter(tx => tx.personal && (tx.type === "income" || tx.type === "expense")).reduce((sum, tx) => sum + (tx.type === "income" ? 1 : -1) * (Number(tx.amount) || 0), 0);\n    const cashNow = startingBalance + income - expense;',
+              'personal pot balance'
+          )
+          replace_once(
+              'return {income,expense,transfer,cashNow,pots,potTotal,committed,committedItems,overdueBills,safeToSpend,viewIncome,viewEssential,viewNonEssential,catSpend,sfeReceived,sfeExpected,realMk,viewMk,bills,budgets,budgetsUsage,recurringIncome,aviationFunding,aviationSpent,aviationLedgerBalance,aviationContrib,aviationTotal,bursaryExpected, safetyBuffer:getForecastConfig().safetyBuffer};',
+              'return {income,expense,transfer,cashNow,pots,personalMoney,potTotal,committed,committedItems,overdueBills,safeToSpend,viewIncome,viewEssential,viewNonEssential,catSpend,sfeReceived,sfeExpected,realMk,viewMk,bills,budgets,budgetsUsage,recurringIncome,aviationFunding,aviationSpent,aviationLedgerBalance,aviationContrib,aviationTotal,bursaryExpected, safetyBuffer:getForecastConfig().safetyBuffer};',
+              'return personalMoney'
+          )
+
+          # Forecast starting cash must also ignore personal transactions.
+          replace_once(
+              'const startingCash = (Number(data.config.startingBalance) || 0) + data.transactions.reduce((s, tx) => {\n      if (tx.type === "income") return s + (Number(tx.amount) || 0);',
+              'const startingCash = (Number(data.config.startingBalance) || 0) + data.transactions.filter(tx => !tx.personal).reduce((s, tx) => {\n      if (tx.type === "income") return s + (Number(tx.amount) || 0);',
+              'forecast personal exclusion'
+          )
+
+          # Budget actuals must ignore personal spending.
+          replace_once(
+              'const spent=data.transactions.filter(tx=>tx.type==="expense"&&monthKey(tx.date)===viewMk&&',
+              'const spent=data.transactions.filter(tx=>!tx.personal&&tx.type==="expense"&&monthKey(tx.date)===viewMk&&',
+              'budget personal exclusion'
+          )
+
+          # Spending tab: household history remains household-only, with a separate personal section.
+          replace_once(
+              '    const expenses = data.transactions.filter(tx => tx.type === "expense");',
+              '    const expenses = data.transactions.filter(tx => tx.type === "expense" && !tx.personal);\n    const personalExpenses = data.transactions.filter(tx => tx.type === "expense" && tx.personal);',
+              'spending personal split'
+          )
+          replace_once(
+              '    if (filtered.length === 0) html += \'<div class="card"><div class="empty">No spending matches.</div></div>\';\n    else { html += \'<div class="card">\'; filtered.forEach(tx => { html += transactionRow(tx); }); html += \'</div>\'; }\n    return html;\n  }',
+              '    if (filtered.length === 0) html += \'<div class="card"><div class="empty">No spending matches.</div></div>\';\n    else { html += \'<div class="card">\'; filtered.forEach(tx => { html += transactionRow(tx); }); html += \'</div>\'; }\n    html += \'<div class="section-title">Jasiek Personal Money</div>\';\n    html += \'<div class="card" style="border-left:4px solid var(--accent);">\';\n    html += \'<div class="card-sub" style="margin-bottom:10px;">Personal spending only · does not affect household totals, Safe to Spend, forecasts, budgets or household pots.</div>\';\n    html += \'<form class="entry" id="personal-exp-form" style="margin-bottom:0;">\';\n    html += \'<div class="field-row"><div class="field"><label>Amount (£)</label><input type="number" id="personal-exp-amount" step="0.01" min="0" required></div><div class="field"><label>Category</label><select id="personal-exp-category">\' + EXPENSE_CATEGORIES.map(c => \'<option>\' + esc(c) + \'</option>\').join("") + \'</select></div></div>\';\n    html += \'<div class="field-row"><div class="field"><label>Description</label><input type="text" id="personal-exp-description" placeholder="e.g. lunch, clothes, hobby"></div><div class="field"><label>Date</label><input type="date" id="personal-exp-date" value="\' + todayStr() + \'"></div></div>\';\n    html += \'<div class="field-row"><div class="field"><label>Subcategory <span class="note">optional</span></label><input type="text" id="personal-exp-subcategory"></div><div class="field"><label>Note <span class="note">optional</span></label><input type="text" id="personal-exp-notes"></div></div>\';\n    html += \'<div class="row-actions"><button type="submit" class="btn primary">Add personal expense</button></div></form>\';\n    const personalSorted = personalExpenses.slice().sort((a,b) => (b.date || "").localeCompare(a.date || ""));\n    if (personalSorted.length) { html += \'<div style="margin-top:12px;">\'; personalSorted.forEach(tx => { html += transactionRow(tx); }); html += \'</div>\'; }\n    else html += \'<div class="empty">No personal spending logged yet.</div>\';\n    html += \'</div>\';\n    return html;\n  }',
+              'personal spending UI'
+          )
+
+          # Income tab: household received income remains household-only, with a separate personal section.
+          replace_once(
+              '    const received = data.transactions.filter(tx => tx.type === "income" && !tx.reserved);',
+              '    const received = data.transactions.filter(tx => tx.type === "income" && !tx.reserved && !tx.personal);\n    const personalIncome = data.transactions.filter(tx => tx.type === "income" && tx.personal);',
+              'income personal split'
+          )
+          replace_once(
+              '    else received.forEach(tx => { html += transactionRow(tx); });\n    html += \'</div>\';\n    return html;\n  }',
+              '    else received.forEach(tx => { html += transactionRow(tx); });\n    html += \'</div>\';\n    html += \'<div class="section-title">Jasiek Personal Money</div>\';\n    html += \'<div class="card" style="border-left:4px solid var(--good);">\';\n    html += \'<div class="card-sub" style="margin-bottom:10px;">Personal income only · does not affect household totals, Safe to Spend, forecasts or household income.</div>\';\n    html += \'<form class="entry" id="personal-income-form" style="margin-bottom:0;">\';\n    html += \'<div class="field-row"><div class="field"><label>Amount (£)</label><input type="number" id="personal-income-amount" step="0.01" min="0" required></div><div class="field"><label>Source</label><select id="personal-income-category">\' + INCOME_CATEGORIES.map(c => \'<option>\' + esc(c) + \'</option>\').join("") + \'</select></div></div>\';\n    html += \'<div class="field-row"><div class="field"><label>Description</label><input type="text" id="personal-income-description" placeholder="e.g. 111 pay, Amazon Flex"></div><div class="field"><label>Date</label><input type="date" id="personal-income-date" value="\' + todayStr() + \'"></div></div>\';\n    html += \'<div class="field-row single"><div class="field"><label>Note <span class="note">optional</span></label><input type="text" id="personal-income-notes"></div></div>\';\n    html += \'<div class="row-actions"><button type="submit" class="btn primary">Add personal income</button></div></form>\';\n    const personalIncomeSorted = personalIncome.slice().sort((a,b) => (b.date || "").localeCompare(a.date || ""));\n    if (personalIncomeSorted.length) { html += \'<div style="margin-top:12px;">\'; personalIncomeSorted.forEach(tx => { html += transactionRow(tx); }); html += \'</div>\'; }\n    else html += \'<div class="empty">No personal income logged yet.</div>\';\n    html += \'</div>\';\n    return html;\n  }',
+              'personal income UI'
+          )
+
+          # Pots: make the Personal Money pot show the personal-only running balance.
+          replace_once(
+              'const amount = isAviation ? t.aviationTotal : (t.pots[p] || 0);',
+              'const amount = isAviation ? t.aviationTotal : (p === "Jasiek Personal Money" ? (t.personalMoney || 0) : (t.pots[p] || 0));',
+              'personal pot display'
+          )
+
+          # Personal forms save directly as flagged transactions; no pot transfer and no household calculations.
+          marker = '    // Bills\n'
+          insert = '''    // Jasiek Personal Money\n    const personalExpForm = document.getElementById("personal-exp-form");\n    if (personalExpForm) personalExpForm.onsubmit = async (e) => {\n      e.preventDefault();\n      const amount = Math.abs(Number(document.getElementById("personal-exp-amount").value) || 0);\n      if (!amount) return;\n      const date = document.getElementById("personal-exp-date").value || todayStr();\n      const category = document.getElementById("personal-exp-category").value || "Other";\n      const description = (document.getElementById("personal-exp-description").value || "").trim() || "Personal spending";\n      const subcategory = (document.getElementById("personal-exp-subcategory").value || "").trim();\n      const notes = document.getElementById("personal-exp-notes").value || "";\n      const rec = { type:"expense", personal:true, date, amount, category, subcategory, description, essential:false, person:data0("personA"), notes, createdAt:Date.now() };\n      const ok = await safeWrite(() => db.collection("transactions").add(rec));\n      if (ok) { personalExpForm.reset(); document.getElementById("personal-exp-date").value = todayStr(); render(); }\n    };\n    const personalIncomeForm = document.getElementById("personal-income-form");\n    if (personalIncomeForm) personalIncomeForm.onsubmit = async (e) => {\n      e.preventDefault();\n      const amount = Math.abs(Number(document.getElementById("personal-income-amount").value) || 0);\n      if (!amount) return;\n      const date = document.getElementById("personal-income-date").value || todayStr();\n      const category = document.getElementById("personal-income-category").value || "Other";\n      const description = (document.getElementById("personal-income-description").value || "").trim() || "Personal income";\n      const notes = document.getElementById("personal-income-notes").value || "";\n      const rec = { type:"income", personal:true, date, amount, category, description, person:data0("personA"), notes, createdAt:Date.now() };\n      const ok = await safeWrite(() => db.collection("transactions").add(rec));\n      if (ok) { personalIncomeForm.reset(); document.getElementById("personal-income-date").value = todayStr(); render(); }\n    };\n\n'''
+          if marker not in s:
+              raise SystemExit('Bills insertion marker not found')
+          s = s.replace(marker, insert + marker, 1)
+
+          p.write_text(s)
+          PY
+      - name: Commit tracker change and remove patch workflow
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          rm -f .github/workflows/add-personal-transactions.yml
+          git add index.html .github/workflows/add-personal-transactions.yml
+          git commit -m 'Add personal spending and income tracking'
+          git push
