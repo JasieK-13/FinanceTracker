@@ -1,0 +1,79 @@
+name: Add personal money selector
+on:
+  push:
+    branches: [main]
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+      - name: Patch expense form
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('index.html')
+          s = p.read_text()
+
+          old_state = 'const adv = uiState.expenseAdvanced;\n    const presets = getExpensePresets();'
+          new_state = 'const adv = uiState.expenseAdvanced;\n    const expenseSource = uiState.expenseSource || "household";\n    const presets = getExpensePresets();'
+          if old_state not in s:
+              raise SystemExit('expense form state marker not found')
+          s = s.replace(old_state, new_state, 1)
+
+          old_form = """    return '<form class=\"entry\" id=\"exp-form\">' +\n      '<div class=\"field-row\"><div class=\"field\"><label>Amount (£)</label><input type=\"number\" id=\"exp-amount\" step=\"0.01\" min=\"0\" required></div><div class=\"field\"><label>Budget / bill / other</label><select id=\"exp-preset\" required>' + presetOptions + '</select></div></div>' +"""
+          new_form = """    const sourceOptions = '<option value=\"household\"' + (expenseSource === \"household\" ? ' selected' : '') + '>Household money</option><option value=\"personal\"' + (expenseSource === \"personal\" ? ' selected' : '') + '>Jasiek Personal Money</option>';\n    const destinationField = expenseSource === \"personal\"\n      ? '<div class=\"field\"><label>Category</label><select id=\"exp-personal-category\" required>' + EXPENSE_CATEGORIES.map(c => '<option>' + esc(c) + '</option>').join(\"\") + '</select></div>'\n      : '<div class=\"field\"><label>Budget / bill / other</label><select id=\"exp-preset\" required>' + presetOptions + '</select></div>';\n    return '<form class=\"entry\" id=\"exp-form\">' +\n      '<div class=\"field-row\"><div class=\"field\"><label>Money source</label><select id=\"exp-source\" required>' + sourceOptions + '</select></div><div class=\"field\"><label>Amount (£)</label><input type=\"number\" id=\"exp-amount\" step=\"0.01\" min=\"0\" required></div></div>' +\n      '<div class=\"field-row\">' + destinationField + '<div class=\"field\"><label>Description <span class=\"note\">optional</span></label><input type=\"text\" id=\"exp-description\" placeholder=\"e.g. Tesco, Shell, shop name\"></div></div>' +"""
+          if old_form not in s:
+              raise SystemExit('expense form opening marker not found')
+          s = s.replace(old_form, new_form, 1)
+
+          old_person = """      const preset = document.getElementById(\"exp-preset\");\n      if (preset) preset.onchange = () => {"""
+          new_person = """      const source = document.getElementById(\"exp-source\");\n      if (source) source.onchange = () => { uiState.expenseSource = source.value; uiState.expensePreset = \"\"; render(); };\n      const preset = document.getElementById(\"exp-preset\");\n      if (preset) preset.onchange = () => {"""
+          if old_person not in s:
+              raise SystemExit('expense source handler marker not found')
+          s = s.replace(old_person, new_person, 1)
+
+          old_submit = """        const selectedId = document.getElementById(\"exp-preset\").value;\n        if (!selectedId) return;\n        const chosen = findExpensePreset(selectedId);\n        const description = (document.getElementById(\"exp-description\").value || \"\").trim();\n        if (selectedId === \"other\" && !description) { const note=document.getElementById(\"exp-preset-note\"); if(note){note.textContent=\"Please enter a description for Other spending.\"; note.style.color=\"var(--bad)\";} return; }\n        const person = document.getElementById(\"exp-person\").value;\n        const category = chosen ? chosen.category : \"Other\";\n        const notes = uiState.expenseAdvanced ? (document.getElementById(\"exp-notes\").value || \"\") : \"\";\n        const date = uiState.expenseAdvanced ? (document.getElementById(\"exp-date\").value || todayStr()) : todayStr();\n        const subcategory = chosen ? chosen.subcategory : (uiState.expenseAdvanced ? (document.getElementById(\"exp-subcategory\").value || \"\") : \"\");\n        const essential = uiState.expenseAdvanced ? document.getElementById(\"exp-essential\").value === \"true\" : (chosen ? !!chosen.essential : false);\n        const rec = { type:\"expense\", date, amount:amt, category, subcategory, description: description || (chosen ? chosen.label : \"Other\"), essential, person, notes, createdAt:Date.now() };\n        if (chosen && chosen.type === \"budget\") { rec.budgetId = chosen.id; rec.presetId = chosen.id; }"""
+          new_submit = """        const sourceValue = document.getElementById(\"exp-source\").value || \"household\";\n        const isPersonal = sourceValue === \"personal\";\n        const selectedId = isPersonal ? \"\" : document.getElementById(\"exp-preset\").value;\n        if (!isPersonal && !selectedId) return;\n        const chosen = isPersonal ? null : findExpensePreset(selectedId);\n        const description = (document.getElementById(\"exp-description\").value || \"\").trim();\n        if (!isPersonal && selectedId === \"other\" && !description) { const note=document.getElementById(\"exp-preset-note\"); if(note){note.textContent=\"Please enter a description for Other spending.\"; note.style.color=\"var(--bad)\";} return; }\n        const person = isPersonal ? data0(\"personA\") : document.getElementById(\"exp-person\").value;\n        const category = isPersonal ? (document.getElementById(\"exp-personal-category\").value || \"Other\") : (chosen ? chosen.category : \"Other\");\n        const notes = uiState.expenseAdvanced ? (document.getElementById(\"exp-notes\").value || \"\") : \"\";\n        const date = uiState.expenseAdvanced ? (document.getElementById(\"exp-date\").value || todayStr()) : todayStr();\n        const subcategory = isPersonal ? (uiState.expenseAdvanced ? (document.getElementById(\"exp-subcategory\").value || \"\") : \"\") : (chosen ? chosen.subcategory : (uiState.expenseAdvanced ? (document.getElementById(\"exp-subcategory\").value || \"\") : \"\"));\n        const essential = isPersonal ? false : (uiState.expenseAdvanced ? document.getElementById(\"exp-essential\").value === \"true\" : (chosen ? !!chosen.essential : false));\n        const rec = { type:\"expense\", date, amount:amt, category, subcategory, description: description || (isPersonal ? \"Personal spending\" : (chosen ? chosen.label : \"Other\")), essential, person, notes, createdAt:Date.now() };\n        if (isPersonal) rec.personal = true;\n        if (!isPersonal && chosen && chosen.type === \"budget\") { rec.budgetId = chosen.id; rec.presetId = chosen.id; }"""
+          if old_submit not in s:
+              raise SystemExit('expense submit marker not found')
+          s = s.replace(old_submit, new_submit, 1)
+
+          old_branch = """        if (chosen && chosen.type === \"bill\") {"""
+          new_branch = """        if (!isPersonal && chosen && chosen.type === \"bill\") {"""
+          if old_branch not in s:
+              raise SystemExit('expense bill branch marker not found')
+          s = s.replace(old_branch, new_branch, 1)
+
+          old_reset = 'if (ok) { expForm.reset(); uiState.expensePreset = ""; render(); }'
+          new_reset = 'if (ok) { expForm.reset(); uiState.expensePreset = ""; uiState.expenseSource = "household"; render(); }'
+          if old_reset not in s:
+              raise SystemExit('expense reset marker not found')
+          s = s.replace(old_reset, new_reset, 1)
+
+          p.write_text(s)
+          PY
+      - name: Validate HTML script syntax
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          s = Path('index.html').read_text()
+          scripts = re.findall(r'<script(?:[^>]*)>(.*?)</script>', s, flags=re.S|re.I)
+          Path('/tmp/app.js').write_text('\n'.join(scripts))
+          PY
+          node --check /tmp/app.js
+      - name: Commit patch
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add index.html
+          git diff --cached --quiet || git commit -m 'Add personal money selector to expense form'
+          git push
+      - name: Remove temporary workflow
+        if: always()
+        run: |
+          git rm .github/workflows/add-personal-expense-selector.yml
+          git commit -m 'Remove temporary personal expense selector workflow' || true
+          git push || true
